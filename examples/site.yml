@@ -1,0 +1,227 @@
+---
+# サンプルプレイブック
+# このファイルは基本的なプレイブック構成例を示しています
+
+- name: System Information Gathering
+  hosts: all
+  gather_facts: true
+  become: false
+  
+  tasks:
+    - name: Display Ansible version
+      debug:
+        var: ansible_version.full
+      tags: [info]
+
+    - name: Display host information
+      debug:
+        msg: |
+          Host: {{ inventory_hostname }}
+          OS: {{ ansible_os_family }}
+          Distribution: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          Architecture: {{ ansible_architecture }}
+          Python: {{ ansible_python_version }}
+      tags: [info]
+
+    - name: Check available collections
+      shell: ansible-galaxy collection list
+      register: collection_list
+      delegate_to: localhost
+      run_once: true
+      tags: [info]
+
+    - name: Display available collections
+      debug:
+        var: collection_list.stdout_lines
+      run_once: true
+      tags: [info]
+
+- name: Basic System Setup
+  hosts: all
+  gather_facts: true
+  become: true
+  
+  vars:
+    # 基本パッケージリスト
+    base_packages:
+      - curl
+      - wget
+      - git
+      - vim
+      - htop
+      - tree
+    
+    # サービス設定
+    services_to_start:
+      - sshd
+      - chronyd
+  
+  tasks:
+    - name: Update package cache (RedHat family)
+      yum:
+        update_cache: yes
+      when: ansible_os_family == "RedHat"
+      tags: [packages]
+
+    - name: Update package cache (Debian family)
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      when: ansible_os_family == "Debian"
+      tags: [packages]
+
+    - name: Install base packages (RedHat family)
+      yum:
+        name: "{{ base_packages }}"
+        state: present
+      when: ansible_os_family == "RedHat"
+      tags: [packages]
+
+    - name: Install base packages (Debian family)
+      apt:
+        name: "{{ base_packages }}"
+        state: present
+      when: ansible_os_family == "Debian"
+      tags: [packages]
+
+    - name: Ensure services are started and enabled
+      systemd:
+        name: "{{ item }}"
+        state: started
+        enabled: yes
+      loop: "{{ services_to_start }}"
+      when: ansible_service_mgr == "systemd"
+      tags: [services]
+
+    - name: Check disk usage
+      shell: df -h
+      register: disk_usage
+      tags: [monitoring]
+
+    - name: Display disk usage
+      debug:
+        var: disk_usage.stdout_lines
+      tags: [monitoring]
+
+- name: Web Server Configuration
+  hosts: webservers
+  gather_facts: true
+  become: true
+  
+  vars:
+    http_port: 80
+    max_clients: 200
+    
+  tasks:
+    - name: Install web server (RedHat family)
+      yum:
+        name: httpd
+        state: present
+      when: ansible_os_family == "RedHat"
+      tags: [webserver]
+
+    - name: Install web server (Debian family)
+      apt:
+        name: apache2
+        state: present
+      when: ansible_os_family == "Debian"
+      tags: [webserver]
+
+    - name: Start and enable web server (RedHat family)
+      systemd:
+        name: httpd
+        state: started
+        enabled: yes
+      when: ansible_os_family == "RedHat"
+      tags: [webserver]
+
+    - name: Start and enable web server (Debian family)
+      systemd:
+        name: apache2
+        state: started
+        enabled: yes
+      when: ansible_os_family == "Debian"
+      tags: [webserver]
+
+    - name: Create index.html
+      copy:
+        content: |
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <title>{{ inventory_hostname }}</title>
+          </head>
+          <body>
+              <h1>Welcome to {{ inventory_hostname }}</h1>
+              <p>This server is managed by Ansible.</p>
+              <p>Environment: {{ env_type | default('unknown') }}</p>
+              <p>Last updated: {{ ansible_date_time.iso8601 }}</p>
+          </body>
+          </html>
+        dest: /var/www/html/index.html
+        mode: '0644'
+      tags: [webserver]
+
+- name: Database Server Configuration
+  hosts: databases
+  gather_facts: true
+  become: true
+  
+  tasks:
+    - name: Install database server (example with PostgreSQL)
+      package:
+        name: postgresql-server
+        state: present
+      when: ansible_os_family == "RedHat"
+      tags: [database]
+
+    - name: Check if database is initialized
+      stat:
+        path: /var/lib/pgsql/data/pg_version
+      register: db_initialized
+      when: ansible_os_family == "RedHat"
+      tags: [database]
+
+    - name: Initialize database
+      command: postgresql-setup initdb
+      when: 
+        - ansible_os_family == "RedHat"
+        - not db_initialized.stat.exists
+      tags: [database]
+
+- name: Post-deployment verification
+  hosts: all
+  gather_facts: false
+  become: false
+  
+  tasks:
+    - name: Test connectivity
+      ping:
+      tags: [verify]
+
+    - name: Check system uptime
+      command: uptime
+      register: uptime_result
+      tags: [verify]
+
+    - name: Display uptime
+      debug:
+        var: uptime_result.stdout
+      tags: [verify]
+
+    - name: Generate deployment report
+      copy:
+        content: |
+          Deployment Report
+          =================
+          Date: {{ ansible_date_time.iso8601 }}
+          Host: {{ inventory_hostname }}
+          User: {{ ansible_user_id }}
+          OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          Kernel: {{ ansible_kernel }}
+          Architecture: {{ ansible_architecture }}
+          
+          Deployment Status: SUCCESS
+        dest: /tmp/deployment-report-{{ inventory_hostname }}.txt
+        mode: '0644'
+      tags: [report]

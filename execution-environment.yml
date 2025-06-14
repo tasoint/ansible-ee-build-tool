@@ -1,0 +1,111 @@
+version: 3
+
+# コンテナイメージの設定
+images:
+  base_image:
+    # Red Hat認定イメージ（要認証）
+    name: registry.redhat.io/ansible-automation-platform-24/ee-minimal-rhel9:latest
+    
+    # 代替オプション（認証不要）
+    # name: quay.io/ansible/creator-ee:latest
+    # name: quay.io/ansible/awx-ee:latest
+
+# Ansible Collections（コミュニティ + Automation Hub）
+dependencies:
+  galaxy: |
+    ---
+    collections:
+      # Red Hat認定コレクション（Automation Hub）
+      - name: redhat.rhel_system_roles
+        version: ">=1.0.0"
+        source: https://console.redhat.com/api/automation-hub/
+      - name: redhat.satellite
+        version: ">=3.0.0"
+        source: https://console.redhat.com/api/automation-hub/
+      - name: redhat.insights
+        version: ">=1.0.0"
+        source: https://console.redhat.com/api/automation-hub/
+      
+      # コミュニティコレクション（Galaxy）
+      - name: ansible.posix
+        version: ">=1.5.0"
+      - name: community.general
+        version: ">=8.0.0"
+      - name: kubernetes.core
+        version: ">=3.0.0"
+      - name: community.docker
+        version: ">=3.0.0"
+      - name: amazon.aws
+        version: ">=7.0.0"
+      - name: azure.azcollection
+        version: ">=1.19.0"
+      - name: google.cloud
+        version: ">=1.3.0"
+
+  # Python パッケージ
+  python: |
+    # 基本パッケージ
+    jmespath>=1.0.0
+    netaddr>=0.8.0
+    
+    # Kubernetes/OpenShift
+    kubernetes>=28.0.0
+    openshift>=0.13.0
+    
+    # クラウドプロバイダー
+    boto3>=1.28.0
+    botocore>=1.31.0
+    azure-mgmt-compute>=30.0.0
+    azure-mgmt-network>=25.0.0
+    google-cloud-compute>=1.14.0
+    
+    # その他のユーティリティ
+    pyvmomi>=8.0.0
+    requests>=2.31.0
+    urllib3>=2.0.0
+
+  # システムパッケージ
+  system: |
+    # ビルドツール
+    python39-devel [platform:rhel-9]
+    gcc [platform:rpm]
+    
+    # 基本ツール
+    git [platform:rpm]
+    rsync [platform:rpm]
+    openssh-clients [platform:rpm]
+    
+    # ネットワークツール
+    bind-utils [platform:rpm]
+    net-tools [platform:rpm]
+    
+    # その他
+    jq [platform:rpm]
+    vim-minimal [platform:rpm]
+
+# ビルド時の設定
+build_arg_defaults:
+  ANSIBLE_GALAXY_CLI_COLLECTION_OPTS: "-v"
+  ANSIBLE_GALAXY_CLI_ROLE_OPTS: "-v"
+
+# 追加のビルドステップ
+additional_build_steps:
+  prepend: |
+    # ansible.cfgをコピー
+    COPY ansible.cfg /etc/ansible/ansible.cfg
+    
+    # 環境情報の出力
+    RUN echo "=== Build Environment ===" && \
+        cat /etc/os-release && \
+        python3 --version && \
+        ansible --version
+
+  append:
+    - RUN echo "=== Installed Collections ===" && ansible-galaxy collection list
+    - RUN echo "=== Custom EE build completed ==="
+
+# 環境変数の設定
+options:
+  container_init:
+    package_pip: ansible-core>=2.15
+  build_outputs_dir: ./context

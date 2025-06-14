@@ -1,0 +1,106 @@
+name: 'Build and Push to Registry'
+description: 'Build and push container images to various registries'
+
+inputs:
+  image_tag:
+    description: 'Container image tag'
+    required: true
+  registry_type:
+    description: 'Registry type (docker, ecr, acr, gcr)'
+    required: true
+  registry_enabled:
+    description: 'Whether this registry is enabled'
+    required: false
+    default: 'true'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Skip if registry disabled
+      if: ${{ inputs.registry_enabled != 'true' }}
+      shell: bash
+      run: |
+        echo "Registry ${{ inputs.registry_type }} is disabled, skipping..."
+        exit 0
+
+    - name: Push to Docker Hub
+      if: ${{ inputs.registry_type == 'docker' && inputs.registry_enabled == 'true' }}
+      shell: bash
+      run: |
+        echo "${{ env.DOCKER_PASSWORD }}" | podman login docker.io -u "${{ env.DOCKER_USERNAME }}" --password-stdin
+        
+        # Docker Hub用のタグを作成
+        DOCKER_TAG="docker.io/${{ inputs.image_tag }}"
+        podman tag "${{ inputs.image_tag }}" "${DOCKER_TAG}"
+        podman push "${DOCKER_TAG}"
+        
+        echo "✅ Pushed to Docker Hub: ${DOCKER_TAG}"
+
+    - name: Push to AWS ECR
+      if: ${{ inputs.registry_type == 'ecr' && inputs.registry_enabled == 'true' }}
+      shell: bash
+      run: |
+        # AWS CLIのインストール
+        curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+        unzip awscliv2.zip
+        sudo ./aws/install
+        
+        # ECRログイン
+        aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
+        podman login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
+        
+        # ECR用のタグを作成
+        ECR_TAG="${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}:$(echo '${{ inputs.image_tag }}' | cut -d':' -f2)"
+        podman tag "${{ inputs.image_tag }}" "${ECR_TAG}"
+        podman push "${ECR_TAG}"
+        
+        echo "✅ Pushed to AWS ECR: ${ECR_TAG}"
+
+    - name: Push to Azure ACR
+      if: ${{ inputs.registry_type == 'acr' && inputs.registry_enabled == 'true' }}
+      shell: bash
+      run: |
+        # Azure CLIのインストール
+        curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+        
+        # Azureログイン
+        az login --service-principal \
+          --username ${{ env.AZURE_CLIENT_ID }} \
+          --password ${{ env.AZURE_CLIENT_SECRET }} \
+          --tenant ${{ env.AZURE_TENANT_ID }}
+        
+        # ACRログイン
+        az acr login --name $(echo "${{ env.ACR_REGISTRY }}" | cut -d'.' -f1)
+        
+        # ACR用のタグを作成
+        ACR_TAG="${{ env.ACR_REGISTRY }}/${{ env.IMAGE_NAME }}:$(echo '${{ inputs.image_tag }}' | cut -d':' -f2)"
+        podman tag "${{ inputs.image_tag }}" "${ACR_TAG}"
+        podman push "${ACR_TAG}"
+        
+        echo "✅ Pushed to Azure ACR: ${ACR_TAG}"
+
+    - name: Push to Google GCR
+      if: ${{ inputs.registry_type == 'gcr' && inputs.registry_enabled == 'true' }}
+      shell: bash
+      run: |
+        # Google Cloud SDKのインストール
+        curl https://sdk.cloud.google.com | bash
+        source $HOME/google-cloud-sdk/path.bash.inc
+        
+        # サービスアカウントキーでログイン
+        echo "${{ env.GCP_SA_KEY }}" | base64 -d > /tmp/gcp-key.json
+        gcloud auth activate-service-account --key-file=/tmp/gcp-key.json
+        gcloud config set project ${{ env.GCP_PROJECT_ID }}
+        
+        # GCRログイン
+        gcloud auth configure-docker
+        
+        # GCR用のタグを作成
+        GCR_TAG="gcr.io/${{ env.GCP_PROJECT_ID }}/${{ env.IMAGE_NAME }}:$(echo '${{ inputs.image_tag }}' | cut -d':' -f2)"
+        podman tag "${{ inputs.image_tag }}" "${GCR_TAG}"
+        podman push "${GCR_TAG}"
+        
+        echo "✅ Pushed to Google GCR: ${GCR_TAG}"
+        
+        # クリーンアップ
+        rm -f /tmp/gcp-key.json

@@ -1,0 +1,74 @@
+version: 3
+
+# サンプル実行環境設定
+# このファイルは基本的な設定例を示しています
+
+images:
+  base_image:
+    # コミュニティ版（認証不要）を使用
+    name: quay.io/ansible/creator-ee:latest
+
+dependencies:
+  # 基本的なコレクション
+  galaxy: |
+    ---
+    collections:
+      # 基本的なコミュニティコレクション
+      - name: ansible.posix
+        version: ">=1.5.0"
+      - name: community.general
+        version: ">=8.0.0"
+      - name: community.crypto
+        version: ">=2.0.0"
+      
+      # クラウドプロバイダー（必要に応じて）
+      - name: amazon.aws
+        version: ">=7.0.0"
+      - name: azure.azcollection
+        version: ">=1.19.0"
+      - name: google.cloud
+        version: ">=1.3.0"
+      
+      # ネットワーク管理
+      - name: community.network
+        version: ">=5.0.0"
+
+  # Python依存関係（最小限）
+  python: |
+    # 基本パッケージ
+    jmespath>=1.0.0
+    netaddr>=0.8.0
+    requests>=2.31.0
+    
+    # クラウドSDK（必要に応じてコメントアウト）
+    # boto3>=1.28.0
+    # azure-mgmt-core>=1.4.0
+    # google-cloud-core>=2.3.0
+
+  # システムパッケージ（最小限）
+  system: |
+    git [platform:rpm]
+    openssh-clients [platform:rpm]
+    jq [platform:rpm]
+
+# ビルド設定
+build_arg_defaults:
+  ANSIBLE_GALAXY_CLI_COLLECTION_OPTS: "-v"
+
+# 追加のビルドステップ
+additional_build_steps:
+  prepend: |
+    # ansible.cfgがある場合はコピー
+    COPY ansible.cfg /etc/ansible/ansible.cfg
+    
+    # タイムゾーンの設定
+    RUN ln -sf /usr/share/zoneinfo/Asia/Tokyo /etc/localtime
+
+  append:
+    - RUN echo "=== Sample EE Build Completed ===" && ansible-galaxy collection list
+
+# オプション
+options:
+  container_init:
+    package_pip: ansible-core>=2.15
+  build_outputs_dir: ./context

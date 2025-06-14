@@ -1,0 +1,34 @@
+ansible-navigator:
+  ansible:
+    inventories:
+    - inventory.yml
+    playbook: site.yml
+  execution-environment:
+    container-engine: auto
+    enabled: true
+    environment-variables:
+      set:
+        ANSIBLE_HOST_KEY_CHECKING: 'false'
+        ANSIBLE_STDOUT_CALLBACK: yaml
+        ANSIBLE_TIMEOUT: '30'
+    image: registry.redhat.io/ansible-automation-platform-24/ee-minimal-rhel9:latest
+    pull-policy: missing
+    volume-mounts:
+    - ${HOME}/.ssh:/home/runner/.ssh:Z
+    - ${PWD}:/runner/project:Z
+    - ${PWD}/ansible.cfg:/etc/ansible/ansible.cfg:Z
+  logging:
+    append: true
+    file: ./navigator.log
+    level: debug
+  playbook-artifact:
+    enable: true
+    replay: ./artifacts
+    save-as: ./artifacts/{playbook_name}-{time_stamp}.json
+  runner:
+    artifact-dir: ./artifacts
+    rotate-artifacts-count: 10
+    timeout: 300
+  settings:
+    effective-settings-file: ./ansible-navigator-settings.json
+    schema-cache-path: ~/.ansible-navigator/schema_cache

@@ -1,0 +1,77 @@
+name: Check Base Images
+
+on:
+  schedule:
+    # 毎日午前9時（JST 18:00 UTC）に実行
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+
+jobs:
+  check-images:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests pyyaml
+
+      - name: Log in to Red Hat Registry
+        if: ${{ env.REDHAT_REGISTRY_USERNAME != '' }}
+        run: |
+          echo "${{ secrets.REDHAT_REGISTRY_PASSWORD }}" | \
+          podman login registry.redhat.io -u "${{ secrets.REDHAT_REGISTRY_USERNAME }}" --password-stdin
+        env:
+          REDHAT_REGISTRY_USERNAME: ${{ secrets.REDHAT_REGISTRY_USERNAME }}
+
+      - name: Check base images
+        run: |
+          chmod +x ./scripts/check-base-images.sh
+          ./scripts/check-base-images.sh
+
+      - name: Create issue on image updates
+        if: ${{ env.IMAGES_UPDATED == 'true' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = 'Base Image Updates Available';
+            const body = `## Base Image Updates Detected
+
+            The following base images have been updated:
+
+            ${process.env.UPDATE_DETAILS}
+
+            ### Action Required
+            - [ ] Review the changes
+            - [ ] Update execution-environment.yml if needed
+            - [ ] Test the new base images
+            - [ ] Rebuild and deploy if everything looks good
+
+            This issue was automatically created by the base image check workflow.
+            `;
+
+            // 既存のissueがあるかチェック
+            const existingIssues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: ['base-image-update']
+            });
+
+            if (existingIssues.data.length === 0) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: title,
+                body: body,
+                labels: ['base-image-update', 'automation']
+              });
+            }

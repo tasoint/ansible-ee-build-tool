@@ -1,0 +1,63 @@
+---
+# Ansible Navigator サンプル設定
+# このファイルはansible-navigatorの基本的な設定例を示しています
+
+ansible-navigator:
+  # Ansible設定
+  ansible:
+    inventories: 
+      - inventory.yml
+    playbook: site.yml
+    config:
+      # デフォルトのansible.cfgファイル
+      path: ansible.cfg
+
+  # 実行環境設定
+  execution-environment:
+    enabled: true
+    image: localhost/ansible-custom-ee:latest
+    pull-policy: missing
+    container-engine: auto
+    
+    # 環境変数
+    environment-variables:
+      set:
+        ANSIBLE_HOST_KEY_CHECKING: "false"
+        ANSIBLE_STDOUT_CALLBACK: "yaml"
+        ANSIBLE_TIMEOUT: "30"
+        ANSIBLE_GATHERING: "implicit"
+        
+    # ボリュームマウント
+    volume-mounts:
+      - "${HOME}/.ssh:/home/runner/.ssh:Z"
+      - "${PWD}:/runner/project:Z"
+
+  # ログ設定
+  logging:
+    level: info
+    append: true
+    file: ./navigator.log
+
+  # プレイブックの実行結果保存
+  playbook-artifact:
+    enable: true
+    replay: ./artifacts
+    save-as: "./artifacts/{playbook_name}-{time_stamp}.json"
+
+  # ランナー設定
+  runner:
+    artifact-dir: ./artifacts
+    rotate-artifacts-count: 10
+    timeout: 300
+    job-timeout: 120
+
+  # 設定ファイル
+  settings:
+    effective-settings-file: ./ansible-navigator-settings.json
+    schema-cache-path: "~/.ansible-navigator/schema_cache"
+
+  # UI設定
+  app: run  # または welcome, browse, inventory等
+  
+  # タイムゾーン設定
+  time-zone: Asia/Tokyo

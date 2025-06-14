@@ -1,0 +1,122 @@
+# Ansible Custom EE Builder - Git Ignore
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Build artifacts
+context/
+build/
+dist/
+*.egg-info/
+
+# Container build artifacts
+Containerfile
+Dockerfile
+
+# Ansible artifacts
+*.retry
+artifacts/
+navigator.log
+ansible-navigator-settings.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Container runtime
+.config/containers/auth.json
+auth.json
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+
+# SSH keys (if accidentally placed in project)
+*.pem
+*.key
+id_rsa*
+*.ppk
+
+# Certificate files
+*.crt
+*.cer
+*.p12
+*.pfx
+*.jks
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Editor temporary files
+.*.swp
+.*.swo
+
+# Test coverage
+.coverage
+htmlcov/
+.tox/
+.pytest_cache/
+
+# Documentation build
+docs/_build/
+site/
+
+# Local testing
+test-*.yml
+test-inventory*
+local-*
+
+# Custom local files
+local/
+custom/
+private/

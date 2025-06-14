@@ -1,0 +1,175 @@
+name: Build Custom EE
+
+on:
+  workflow_dispatch:
+    inputs:
+      ee_file:
+        description: 'Execution Environment YAML file'
+        required: false
+        default: 'execution-environment.yml'
+        type: string
+      tag:
+        description: 'Container image tag'
+        required: false
+        default: 'latest'
+        type: string
+      push_to_registry:
+        description: 'Push to container registry'
+        required: false
+        default: true
+        type: boolean
+      registry_type:
+        description: 'Target registry'
+        required: false
+        default: 'docker'
+        type: choice
+        options:
+          - docker
+          - ecr
+          - acr
+          - gcr
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+
+env:
+  IMAGE_NAME: ansible-custom-ee
+  REGISTRY_BASE: ${{ github.repository_owner }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        registry: [docker, ecr, acr, gcr]
+        include:
+          - registry: docker
+            enabled: ${{ vars.ENABLE_DOCKER_PUSH || 'true' }}
+          - registry: ecr
+            enabled: ${{ vars.ENABLE_ECR_PUSH || 'false' }}
+          - registry: acr
+            enabled: ${{ vars.ENABLE_ACR_PUSH || 'false' }}
+          - registry: gcr
+            enabled: ${{ vars.ENABLE_GCR_PUSH || 'false' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible-builder ansible-core podman-py
+          
+          # Podmanのインストール
+          sudo apt-get update
+          sudo apt-get install -y podman
+
+      - name: Log in to Red Hat Registry
+        if: ${{ env.REDHAT_REGISTRY_USERNAME != '' }}
+        run: |
+          echo "${{ secrets.REDHAT_REGISTRY_PASSWORD }}" | \
+          podman login registry.redhat.io -u "${{ secrets.REDHAT_REGISTRY_USERNAME }}" --password-stdin
+        env:
+          REDHAT_REGISTRY_USERNAME: ${{ secrets.REDHAT_REGISTRY_USERNAME }}
+
+      - name: Determine image tag
+        id: tag
+        run: |
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG=${GITHUB_REF#refs/tags/}
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TAG=${{ inputs.tag }}
+          else
+            TAG="dev-$(date +%Y%m%d)"
+          fi
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "full_tag=${REGISTRY_BASE}/${IMAGE_NAME}:${TAG}" >> $GITHUB_OUTPUT
+
+      - name: Build EE with ansible-builder
+        run: |
+          EE_FILE="${{ inputs.ee_file || 'execution-environment.yml' }}"
+          
+          # ansible-builderでビルド
+          ansible-builder build \
+            --file "${EE_FILE}" \
+            --tag "${{ steps.tag.outputs.full_tag }}" \
+            --container-runtime podman \
+            --verbosity 2
+        env:
+          ANSIBLE_GALAXY_SERVER_AUTOMATION_HUB_TOKEN: ${{ secrets.ANSIBLE_GALAXY_SERVER_AUTOMATION_HUB_TOKEN }}
+          ANSIBLE_GALAXY_SERVER_GALAXY_TOKEN: ${{ secrets.ANSIBLE_GALAXY_SERVER_GALAXY_TOKEN }}
+
+      - name: Test EE image
+        run: |
+          # 基本的な動作確認
+          podman run --rm "${{ steps.tag.outputs.full_tag }}" ansible --version
+          podman run --rm "${{ steps.tag.outputs.full_tag }}" ansible-galaxy collection list
+
+      - name: Push to registries
+        if: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) || (github.event_name == 'workflow_dispatch' && inputs.push_to_registry) }}
+        uses: ./.github/actions/build-push
+        with:
+          image_tag: ${{ steps.tag.outputs.full_tag }}
+          registry_type: ${{ matrix.registry }}
+          registry_enabled: ${{ matrix.enabled }}
+        env:
+          # Docker Hub
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+          
+          # AWS ECR
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+          
+          # Azure ACR
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
+          
+          # Google GCR
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Generate SBOM
+        if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') }}
+        run: |
+          # Syftを使用してSBOM生成
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+          syft "${{ steps.tag.outputs.full_tag }}" -o spdx-json > sbom.spdx.json
+
+      - name: Upload SBOM
+        if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ steps.tag.outputs.tag }}
+          path: sbom.spdx.json
+
+  security-scan:
+    needs: build
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') }}
+    
+    steps:
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ needs.build.outputs.full_tag }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'

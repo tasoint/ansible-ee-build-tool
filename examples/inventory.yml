@@ -1,0 +1,90 @@
+---
+# サンプルインベントリファイル
+# このファイルは基本的なインベントリ構成例を示しています
+
+all:
+  children:
+    # ローカル環境
+    local:
+      hosts:
+        localhost:
+          ansible_connection: local
+          ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    
+    # 開発環境サーバー
+    development:
+      hosts:
+        dev-server-01:
+          ansible_host: 192.168.1.10
+          ansible_user: ansible
+          ansible_ssh_private_key_file: ~/.ssh/id_rsa
+        dev-server-02:
+          ansible_host: 192.168.1.11
+          ansible_user: ansible
+          ansible_ssh_private_key_file: ~/.ssh/id_rsa
+      vars:
+        env_type: development
+        backup_enabled: false
+    
+    # ステージング環境
+    staging:
+      hosts:
+        stage-web-01:
+          ansible_host: 10.0.1.10
+          ansible_user: centos
+        stage-web-02:
+          ansible_host: 10.0.1.11
+          ansible_user: centos
+        stage-db-01:
+          ansible_host: 10.0.1.20
+          ansible_user: centos
+      vars:
+        env_type: staging
+        backup_enabled: true
+        backup_retention_days: 7
+    
+    # プロダクション環境
+    production:
+      hosts:
+        prod-web-01:
+          ansible_host: prod-web-01.example.com
+          ansible_user: ec2-user
+        prod-web-02:
+          ansible_host: prod-web-02.example.com
+          ansible_user: ec2-user
+        prod-db-01:
+          ansible_host: prod-db-01.example.com
+          ansible_user: ec2-user
+      vars:
+        env_type: production
+        backup_enabled: true
+        backup_retention_days: 30
+    
+    # Webサーバーグループ
+    webservers:
+      children:
+        - development
+        - staging
+      hosts:
+        prod-web-01:
+        prod-web-02:
+    
+    # データベースサーバーグループ
+    databases:
+      hosts:
+        stage-db-01:
+        prod-db-01:
+
+  # 全環境共通の変数
+  vars:
+    # Ansible設定
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+    ansible_ssh_retries: 3
+    
+    # アプリケーション設定
+    app_name: sample-app
+    app_version: "1.0.0"
+    
+    # 監視設定
+    monitoring_enabled: true
+    log_level: info
